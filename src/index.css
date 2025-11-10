@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 188 58% 97%;
+    --foreground: 220 35% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 35% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 35% 18%;
+
+    --primary: 188 64% 46%;
+    --primary-foreground: 0 0% 100%;
+    
+    --primary-light: 188 64% 82%;
+    
+    --secondary: 32 92% 88%;
+    --secondary-foreground: 220 35% 20%;
+
+    --accent: 262 64% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --muted: 188 32% 88%;
+    --muted-foreground: 218 24% 38%;
+
+    --destructive: 5 70% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 188 32% 85%;
+    --input: 188 32% 85%;
+    --ring: 188 64% 46%;
+
+    --radius: 1rem;
+    
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 220 45% 12%;
+    --foreground: 188 60% 92%;
+
+    --card: 220 45% 16%;
+    --card-foreground: 188 60% 92%;
+
+    --popover: 220 45% 16%;
+    --popover-foreground: 188 60% 92%;
+
+    --primary: 188 64% 60%;
+    --primary-foreground: 220 45% 12%;
+    
+    --primary-light: 188 64% 32%;
+
+    --secondary: 32 70% 32%;
+    --secondary-foreground: 188 60% 92%;
+
+    --accent: 262 64% 62%;
+    --accent-foreground: 220 45% 12%;
+
+    --muted: 220 36% 22%;
+    --muted-foreground: 188 18% 72%;
+
+    --destructive: 5 70% 60%;
+    --destructive-foreground: 220 45% 12%;
+
+    --border: 220 36% 32%;
+    --input: 220 36% 32%;
+    --ring: 188 64% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.6s ease-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.8s ease-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
