@@ -20,6 +20,34 @@ Promover la **inclusión y accesibilidad comunicativa** mediante el uso de tecno
 
 ---
 
+## ⚙️ Puesta en marcha rápida
+
+```bash
+npm install
+npm run dev
+```
+
+1. Carga `http://localhost:5173` y visita `/chatbot`.
+2. Ingresa una frase cotidiana (ej. *"tengo hambre"*).
+3. El cliente infiere palabras clave con el dataset `src/data/frases_procesadas.csv` y consulta la API oficial de ARASAAC (`/pictograms/{language}/bestsearch/{searchText}`) para mostrar hasta seis pictogramas.
+
+> **Nota:** El idioma predeterminado de búsqueda es español (`es`), pero se puede alternar a inglés directamente en la interfaz.
+
+### Búsquedas sin resultados
+
+- Si ARASAAC responde `404` (no hay pictogramas para la frase exacta), el cliente vuelve a intentar automáticamente con palabras individuales y sinónimos cercanos del dataset.  
+- En la interfaz verás las "consultas enviadas" para saber qué términos se probaron.  
+- Cuando ninguna variación tiene coincidencias, se muestra un aviso informativo en lugar de un error bloqueante.
+
+---
+
+## 🧠 Modelo semántico
+
+- El dataset de frases procesa tokens, bigramas y trigramas. Un modelo ligero basado en coincidencias léxicas ponderadas identifica las frases más parecidas y construye las consultas para ARASAAC.  
+- Para una versión entrenable recomendamos usar **`sentence-transformers/paraphrase-multilingual-mpnet-base-v2`** (o MiniLM equivalente) para generar embeddings semánticos multilingües; después basta con un **k-NN** sobre el mismo dataset para recuperar las frases más afines antes de llamar a la API de pictogramas.
+
+---
+
 ## 🧩 Estructura del proyecto
 
 - `/` → **Landing Page** con descripción, beneficios y CTA hacia el chatbot.  
