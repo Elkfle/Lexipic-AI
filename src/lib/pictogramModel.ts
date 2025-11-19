@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import datasetCsv from "@/data/frases_procesadas.csv?raw";
+import { distance as levenshtein } from "fastest-levenshtein";
 
 export type PictogramSample = {
   frase: string;
@@ -38,6 +39,13 @@ const rawSamples: PictogramSample[] = (() => {
       trigrams: parseArrayField(row.trigrams),
     }));
 })();
+
+const VOCAB = new Set<string>();
+rawSamples.forEach((sample) => {
+  sample.tokens.forEach((token) => {
+    if (token) VOCAB.add(token);
+  });
+});
 
 function parseArrayField(value?: string): string[] {
   if (!value) return [];
