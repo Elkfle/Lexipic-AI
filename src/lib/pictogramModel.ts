@@ -22,6 +22,15 @@ const NON_ALPHANUMERIC = /[^a-z0-9ñ\s]/g;
 const EXTRA_SPACES = /\s+/g;
 const ACCENTS = /[\u0300-\u036f]/g;
 
+const LEET_MAP: Record<string, string> = {
+  "0": "o",
+  "1": "i",
+  "3": "e",
+  "4": "a",
+  "5": "s",
+  "7": "t",
+};
+
 const rawSamples: PictogramSample[] = (() => {
   const parsed = Papa.parse<Record<string, string>>(datasetCsv, {
     header: true,
@@ -69,11 +78,20 @@ function parseArrayField(value?: string): string[] {
   }
 }
 
+
+function normalizeLeet(text: string): string {
+  return text.replace(/[013457]/g, (ch) => LEET_MAP[ch] ?? ch);
+}
+
 function normalizeText(text: string): string {
   if (!text) return "";
 
-  return text
-    .toLowerCase()
+  let normalized = text.toLowerCase();
+
+  //pasar de "t3ng0" → "tengo"
+  normalized = normalizeLeet(normalized);
+
+  normalized = normalized
     .replace(/ñ/g, ENYE_PLACEHOLDER)
     .normalize("NFD")
     .replace(ACCENTS, "")
@@ -81,13 +99,39 @@ function normalizeText(text: string): string {
     .replace(NON_ALPHANUMERIC, " ")
     .replace(EXTRA_SPACES, " ")
     .trim();
+
+  return normalized;
 }
 
+function correctToken(token: string): string {
+  if (!token) return token;
+  if (VOCAB.has(token)) return token;
+
+  let best = token;
+  let bestDist = Infinity;
+
+  for (const cand of VOCAB) {
+    const d = levenshtein(token, cand);
+    if (d < bestDist) {
+      bestDist = d;
+      best = cand;
+    }
+    if (bestDist === 0) break;
+  }
+
+  return bestDist <= 2 ? best : token;
+}
+
+
 function tokenize(text: string): string[] {
-  return normalizeText(text)
+  const normalized = normalizeText(text);
+
+  const rawTokens = normalized
     .split(" ")
     .map((token) => token.trim())
     .filter(Boolean);
+
+  return rawTokens.map((token) => correctToken(token));
 }
 
 function generateNgrams(tokens: string[], size: number): string[] {

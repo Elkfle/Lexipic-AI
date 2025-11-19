@@ -120,13 +120,6 @@ const Chatbot = () => {
     const selectedLanguage = language;
     setMessage("");
 
-    const userEntry: ConversationMessage = {
-      id: createMessageId(),
-      role: "user",
-      content: prompt,
-    };
-
-    setMessages((prev) => [...prev, userEntry]);
     setIsLoading(true);
     setIsBotTyping(true);
     controllerRef.current?.abort();
@@ -134,6 +127,32 @@ const Chatbot = () => {
     controllerRef.current = controller;
 
     try {
+      // 1) Pictogramas directos para el mensaje del usuario
+      let userPictograms: PictogramResult[] = [];
+      try {
+        userPictograms = await fetchBestPictograms(selectedLanguage, prompt, controller.signal);
+
+        if (userPictograms.length > 1) {
+          userPictograms = [userPictograms[0]];
+        }
+        
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          console.warn("No se pudieron obtener pictogramas directos para el usuario", error);
+        }
+      }
+
+      const userEntry: ConversationMessage = {
+        id: createMessageId(),
+        role: "user",
+        content: prompt,
+        pictograms: userPictograms.length ? userPictograms : undefined,
+        language: selectedLanguage,
+      };
+
+      setMessages((prev) => [...prev, userEntry]);
+
+      // 2) Mantener tu flujo actual de inferencia + ARASAAC
       const matches = inferSearchQueries(prompt, 3);
 
       if (!matches.length) {
@@ -167,11 +186,7 @@ const Chatbot = () => {
           if ((error as Error).name === "AbortError") {
             return;
           }
-          console.warn(`No se pudo consultar pictogramas para "${query}"`, error);
-        }
-
-        if (aggregated.length >= MAX_PICTOGRAMS) {
-          break;
+          console.error(error);
         }
       }
 
@@ -183,6 +198,7 @@ const Chatbot = () => {
       }
 
       const deduped = dedupePictograms(aggregated, MAX_PICTOGRAMS);
+
       setMessages((prev) => [
         ...prev,
         {
@@ -192,6 +208,7 @@ const Chatbot = () => {
           language: selectedLanguage,
         },
       ]);
+
       toast.success("¡Pictogramas generados!");
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
@@ -206,7 +223,6 @@ const Chatbot = () => {
       setIsBotTyping(false);
     }
   };
-
   const languageOptions = [
     { value: "es", label: "Español" },
     { value: "en", label: "Inglés" },
@@ -228,6 +244,27 @@ const Chatbot = () => {
         <div key={entry.id} className="flex w-full justify-end">
           <div className={bubbleClasses}>
             <p className="text-base leading-relaxed whitespace-pre-line">{entry.content}</p>
+
+            {entry.pictograms?.length ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                {entry.pictograms.map((item) => (
+                  <a
+                    key={`${entry.id}-${item.id}-${item.searchText}`}
+                    href={`https://arasaac.org/pictograms/${entry.language ?? language}/${item.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block rounded-2xl bg-white shadow-sm overflow-hidden"
+                  >
+                    <img
+                      src={item.imageUrl}
+                      alt={`Pictograma ${item.id}`}
+                      className="w-full h-48 object-contain bg-muted"
+                    />
+                    <span className="sr-only">Pictograma {item.id}</span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       );
