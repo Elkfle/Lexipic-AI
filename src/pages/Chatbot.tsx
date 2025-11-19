@@ -129,13 +129,31 @@ const Chatbot = () => {
     try {
       // 1) Pictogramas directos para el mensaje del usuario
       let userPictograms: PictogramResult[] = [];
+
       try {
+        // Intentar frase completa (casi siempre 404 en ARASAAC)
         userPictograms = await fetchBestPictograms(selectedLanguage, prompt, controller.signal);
 
+        // Si no hay resultados → fallback por palabras individuales
+        if (!userPictograms.length) {
+          const tokens = prompt.split(/\s+/).filter(Boolean);
+
+          for (const token of tokens) {
+            const result = await fetchBestPictograms(selectedLanguage, token, controller.signal);
+            if (result.length) {
+              userPictograms = [result[0]]; // solo un pictograma
+              break;
+            }
+          }
+        }
+
+        // GARANTIZAMOS solo uno
         if (userPictograms.length > 1) {
           userPictograms = [userPictograms[0]];
         }
-        
+
+        console.log("🎯 USER PICTOGRAMS (FINAL):", userPictograms);
+
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           console.warn("No se pudieron obtener pictogramas directos para el usuario", error);
