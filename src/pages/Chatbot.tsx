@@ -4,6 +4,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -12,11 +18,14 @@ import {
 } from "@/components/ui/select";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
-import { Send, Sparkles, ImageIcon, ArrowLeft } from "lucide-react";
+import { Send, Sparkles, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { inferSearchQueries, InferenceResult } from "@/lib/pictogramModel";
 import { dedupePictograms, fetchBestPictograms, PictogramResult } from "@/lib/pictogramService";
+import { cn } from "@/lib/utils";
+
+const STORAGE_KEY = "lexipic_chat_history";
 
 const MAX_PICTOGRAMS = 6;
 
@@ -39,15 +48,67 @@ const buildSearchQueries = (matches: InferenceResult[]): string[] => {
 };
 
 const Chatbot = () => {
+  type ConversationMessage = {
+    id: string;
+    role: "user" | "assistant";
+    content?: string;
+    pictograms?: PictogramResult[];
+    language?: string;
+  };
+
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [language, setLanguage] = useState("es");
-  const [pictograms, setPictograms] = useState<PictogramResult[]>([]);
-  const [inference, setInference] = useState<InferenceResult[]>([]);
-  const [queryHistory, setQueryHistory] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [lastInference, setLastInference] = useState<InferenceResult[]>([]);
+  const [lastQueries, setLastQueries] = useState<string[]>([]);
+  const [isBotTyping, setIsBotTyping] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const createMessageId = () =>
+    globalThis.crypto?.randomUUID?.() ?? `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   useEffect(() => () => controllerRef.current?.abort(), []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isBotTyping, isLoading]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return;
+
+      const sanitized: ConversationMessage[] = parsed
+        .filter((entry) => entry && (entry.role === "user" || entry.role === "assistant"))
+        .map((entry) => ({
+          id: typeof entry.id === "string" ? entry.id : createMessageId(),
+          role: entry.role === "assistant" ? "assistant" : "user",
+          content: typeof entry.content === "string" ? entry.content : undefined,
+          pictograms: Array.isArray(entry.pictograms) ? entry.pictograms : undefined,
+          language: typeof entry.language === "string" ? entry.language : undefined,
+        }));
+
+      if (sanitized.length) {
+        setMessages(sanitized);
+      }
+    } catch (error) {
+      console.warn("No se pudo restaurar el historial del chat", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!messages.length) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+  }, [messages]);
 
   const handleSend = async () => {
     if (!message.trim()) {
@@ -55,27 +116,39 @@ const Chatbot = () => {
       return;
     }
 
+    const prompt = message.trim();
+    const selectedLanguage = language;
+    setMessage("");
+
+    const userEntry: ConversationMessage = {
+      id: createMessageId(),
+      role: "user",
+      content: prompt,
+    };
+
+    setMessages((prev) => [...prev, userEntry]);
     setIsLoading(true);
+    setIsBotTyping(true);
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
 
     try {
-      const matches = inferSearchQueries(message, 3);
+      const matches = inferSearchQueries(prompt, 3);
 
       if (!matches.length) {
-        setInference([]);
-        setPictograms([]);
+        setLastInference([]);
+        setLastQueries([]);
         toast.error("No pude entender la frase, intenta con otra redacción");
         return;
       }
 
-      setInference(matches);
+      setLastInference(matches);
 
       const queries = buildSearchQueries(matches);
 
       if (!queries.length) {
-        setPictograms([]);
+        setLastQueries([]);
         toast.error("No logramos generar palabras clave útiles para la búsqueda");
         return;
       }
@@ -85,7 +158,7 @@ const Chatbot = () => {
 
       for (const query of queries) {
         try {
-          const results = await fetchBestPictograms(language, query, controller.signal);
+          const results = await fetchBestPictograms(selectedLanguage, query, controller.signal);
           if (results.length) {
             aggregated.push(...results);
             successfulQueries.push(query);
@@ -102,15 +175,23 @@ const Chatbot = () => {
         }
       }
 
-      setQueryHistory(successfulQueries.length ? successfulQueries : queries);
+      setLastQueries(successfulQueries.length ? successfulQueries : queries);
 
       if (!aggregated.length) {
-        setPictograms([]);
         toast.info("Probamos varias combinaciones pero no hubo pictogramas disponibles");
         return;
       }
 
-      setPictograms(dedupePictograms(aggregated, MAX_PICTOGRAMS));
+      const deduped = dedupePictograms(aggregated, MAX_PICTOGRAMS);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: createMessageId(),
+          role: "assistant",
+          pictograms: deduped,
+          language: selectedLanguage,
+        },
+      ]);
       toast.success("¡Pictogramas generados!");
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
@@ -122,6 +203,7 @@ const Chatbot = () => {
         controllerRef.current = null;
       }
       setIsLoading(false);
+      setIsBotTyping(false);
     }
   };
 
@@ -129,6 +211,59 @@ const Chatbot = () => {
     { value: "es", label: "Español" },
     { value: "en", label: "Inglés" },
   ];
+
+  const showInfoPanel = lastInference.length > 0 || lastQueries.length > 0;
+
+  const renderMessage = (entry: ConversationMessage) => {
+    const isUser = entry.role === "user";
+    const bubbleClasses = cn(
+      "max-w-[80%] rounded-3xl shadow-md px-5 py-3",
+      isUser
+        ? "bg-primary text-primary-foreground rounded-br-md"
+        : "bg-muted/30 border border-border text-foreground rounded-bl-md"
+    );
+
+    if (isUser) {
+      return (
+        <div key={entry.id} className="flex w-full justify-end">
+          <div className={bubbleClasses}>
+            <p className="text-base leading-relaxed whitespace-pre-line">{entry.content}</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!entry.pictograms?.length) {
+      return null;
+    }
+
+    const linkLanguage = entry.language ?? language;
+
+    return (
+      <div key={entry.id} className="flex w-full justify-start">
+        <div className={bubbleClasses}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {entry.pictograms.map((item) => (
+              <a
+                key={`${entry.id}-${item.id}-${item.searchText}`}
+                href={`https://arasaac.org/pictograms/${linkLanguage}/${item.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-2xl bg-white shadow-sm overflow-hidden"
+              >
+                <img
+                  src={item.imageUrl}
+                  alt={`Pictograma ${item.id}`}
+                  className="w-full h-48 object-contain bg-muted"
+                />
+                <span className="sr-only">Pictograma {item.id}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -140,23 +275,24 @@ const Chatbot = () => {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Volver al inicio
           </Link>
-          
           <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold mb-4">
-              Chatbot de Pictogramas
-            </h1>
+            <h1 className="text-3xl md:text-4xl font-bold mb-4">Chatbot de Pictogramas</h1>
             <p className="text-muted-foreground">
-              Escribe una palabra o frase y obtén el pictograma correspondiente
+              Conversa con Lexi para obtener pictogramas guiados por PLN y la API oficial de ARASAAC.
             </p>
           </div>
-
           <Card className="mb-8">
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Idioma de búsqueda</label>
+            <CardContent className="pt-6 flex flex-col h-[82vh]">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Idioma de búsqueda</p>
+                    <p className="text-xs text-muted-foreground">
+                      Ajusta cómo consultamos los pictogramas oficiales.
+                    </p>
+                  </div>
                   <Select value={language} onValueChange={(value) => setLanguage(value)}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="sm:w-48">
                       <SelectValue placeholder="Selecciona un idioma" />
                     </SelectTrigger>
                     <SelectContent>
@@ -168,120 +304,115 @@ const Chatbot = () => {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Tu mensaje
-                  </label>
+              <div className="mt-6 flex-1 overflow-y-auto space-y-4 pr-1">
+                {messages.map((entry) => renderMessage(entry))}
+                {isBotTyping ? (
+                  <div className="flex w-full justify-start">
+                    <div className="max-w-[60%] rounded-3xl bg-muted/30 border border-border px-5 py-3 shadow-sm">
+                      <div className="flex items-center gap-2">
+                        {[0, 1, 2].map((dot) => (
+                          <span
+                            key={dot}
+                            className="inline-block h-2 w-2 rounded-full bg-muted-foreground/70 animate-bounce"
+                            style={{ animationDelay: `${dot * 150}ms` }}
+                          />
+                        ))}
+                        <span className="text-xs text-muted-foreground">Lexi está buscando pictogramas...</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div ref={scrollRef} />
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-end gap-3 rounded-full border bg-muted/30 px-5 py-4 shadow-inner">
                   <Textarea
-                    placeholder="Ejemplo: Quiero comer..."
+                    placeholder="Escribe tu mensaje como si chatearas con Lexi..."
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    className="min-h-[120px] text-lg"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        !isLoading && handleSend();
+                      }
+                    }}
+                    className="min-h-[72px] flex-1 resize-none border-none bg-transparent p-1 text-base shadow-none placeholder:px-1 placeholder:text-muted-foreground/80 focus-visible:ring-0 focus-visible:ring-offset-0"
                     disabled={isLoading}
                   />
+                  <Button
+                    onClick={handleSend}
+                    disabled={isLoading}
+                    size="icon"
+                    className="rounded-full h-12 w-12 shadow-md"
+                  >
+                    {isLoading ? (
+                      <Sparkles className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Send className="h-5 w-5" />
+                    )}
+                    <span className="sr-only">Enviar mensaje</span>
+                  </Button>
                 </div>
-                
-                <Button 
-                  onClick={handleSend}
-                  disabled={isLoading}
-                  size="lg"
-                  className="w-full rounded-full"
-                >
-                  {isLoading ? (
-                    <>
-                      <Sparkles className="mr-2 h-5 w-5 animate-spin" />
-                      Generando pictograma...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2 h-5 w-5" />
-                      Enviar
-                    </>
-                  )}
-                </Button>
 
-                {inference.length ? (
-                  <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground space-y-2">
-                    <p className="font-medium text-foreground">Frases similares detectadas</p>
-                    <div className="flex flex-wrap gap-2">
-                      {inference.map((match) => (
-                        <Badge key={`${match.sample.frase}-${match.searchText}`} variant="secondary">
-                          {match.sample.frase}
-                        </Badge>
-                      ))}
-                    </div>
-                    {queryHistory.length ? (
-                      <div className="space-y-1 text-xs">
-                        <p className="font-semibold text-foreground">Consultas enviadas</p>
-                        <div className="flex flex-wrap gap-2">
-                          {queryHistory.map((query) => (
-                            <Badge key={query} variant="outline">
-                              {query}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    <p className="text-xs">Usamos las coincidencias más cercanas y, si es necesario, palabras individuales para maximizar los resultados.</p>
-                  </div>
+                {showInfoPanel ? (
+                  <Accordion type="single" collapsible className="rounded-2xl border bg-muted/20">
+                    <AccordionItem value="pln-info">
+                      <AccordionTrigger className="text-sm font-semibold px-4">
+                        Ver análisis de PLN de este turno
+                      </AccordionTrigger>
+                      <AccordionContent className="space-y-3 text-sm text-muted-foreground px-4">
+                        {lastInference.length ? (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Frases similares detectadas
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {lastInference.map((match) => (
+                                <Badge key={`${match.sample.frase}-${match.searchText}`} variant="secondary">
+                                  {match.sample.frase}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {lastQueries.length ? (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Consultas enviadas a ARASAAC
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {lastQueries.map((query) => (
+                                <Badge key={query} variant="outline">
+                                  {query}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 ) : null}
               </div>
             </CardContent>
           </Card>
-
-          {pictograms.length ? (
-            <Card className="border-2 border-primary animate-slide-up">
-              <CardContent className="pt-6">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <ImageIcon className="h-5 w-5 text-primary" />
-                    <h2 className="text-xl font-semibold">Pictogramas sugeridos</h2>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {pictograms.map((item) => (
-                      <div key={`${item.id}-${item.searchText}`} className="rounded-xl bg-secondary/30 p-4">
-                        <img 
-                          src={item.imageUrl}
-                          alt={`Pictograma ${item.id}`}
-                          className="max-h-64 w-full object-contain mx-auto mb-3 rounded-lg shadow-sm"
-                        />
-                        <p className="text-sm font-medium text-foreground">#{item.id}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                          {item.keywords.length ? item.keywords.join(", ") : "Sin descripción"}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Consulta: <span className="font-semibold">{item.searchText}</span>
-                        </p>
-                        <a
-                          href={`https://arasaac.org/pictograms/${language}/${item.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary text-xs font-semibold inline-block mt-2"
-                        >
-                          Ver en ARASAAC
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-muted-foreground text-sm">
-                    Pictograma generado para: <span className="font-semibold text-foreground">"{message}"</span>
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-2 border-dashed border-border">
-              <CardContent className="pt-6">
-                <div className="text-center py-12">
-                  <ImageIcon className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-                  <p className="text-muted-foreground">
-                    El pictograma aparecerá aquí
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <Card className="border-dashed">
+            <CardContent className="pt-6 space-y-3 text-sm text-muted-foreground">
+              <p className="font-semibold text-foreground">¿Cómo funciona?</p>
+              <p>
+                Convertimos tu frase en palabras clave mediante PLN (frases similares, lematización y detección de
+                conceptos). Luego consultamos la API de ARASAAC y te mostramos los pictogramas mejor posicionados.
+              </p>
+              <p>
+                Si no aparece lo que necesitas, prueba describir la acción con más contexto o envía frases cortas en pasos
+                separados para mantener un historial conversacional.
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
