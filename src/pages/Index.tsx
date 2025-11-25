@@ -5,6 +5,8 @@ import { ShimmerButton } from "@/components/ui/shimmer-button";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { Sparkles, Heart, Users, Zap, Shield, BookOpen } from "lucide-react";
+import { API_URL } from "../config";
+import { useEffect } from "react";
 
 const howItWorksFeatures = [
   {
@@ -34,6 +36,12 @@ const howItWorksFeatures = [
 ];
 
 const Index = () => {
+  useEffect(() => {
+    fetch(`${API_URL}/`)
+      .then(res => res.text())
+      .then(console.log)
+      .catch(console.error);
+  }, []);
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
