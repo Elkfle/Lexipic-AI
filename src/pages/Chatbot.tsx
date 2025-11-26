@@ -25,6 +25,9 @@ import { inferSearchQueries, InferenceResult } from "@/lib/pictogramModel";
 import { dedupePictograms, fetchBestPictograms, PictogramResult } from "@/lib/pictogramService";
 import { cn } from "@/lib/utils";
 
+import { API_URL } from "../config";
+
+
 const STORAGE_KEY = "lexipic_chat_history";
 
 const MAX_PICTOGRAMS = 6;
