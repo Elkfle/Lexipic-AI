@@ -22,43 +22,41 @@ export type PictogramResult = {
 const API_BASE = "https://api.arasaac.org/api/pictograms";
 const STATIC_BASE = "https://static.arasaac.org/pictograms";
 
+import { API_URL } from "../config";
+
 export async function fetchBestPictograms(
   language: string,
   searchText: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<PictogramResult[]> {
   const trimmed = searchText.trim();
   if (!trimmed) return [];
 
-  const encodedQuery = encodeURIComponent(trimmed);
-  const response = await fetch(`${API_BASE}/${language}/bestsearch/${encodedQuery}`, {
+  const res = await fetch(`${API_URL}/api/generate-pictograms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: trimmed,
+      language,
+    }),
     signal,
   });
 
-  if (response.status === 404) {
+  if (!res.ok) {
+    throw new Error(`Backend error: ${res.status}`);
+  }
+
+  const data = await res.json();
+
+  // El backend devuelve:
+  // { ok: true, pictograms: [...] }
+  if (!data || !data.ok || !Array.isArray(data.pictograms)) {
     return [];
   }
 
-  if (!response.ok) {
-    let details = "";
-    try {
-      details = await response.text();
-    } catch {
-      details = "";
-    }
-    throw new Error(`No se pudo obtener pictogramas (${response.status}) ${details}`.trim());
-  }
-
-  const data = (await response.json()) as PictogramApiResponse[];
-
-  return data.map((item) => ({
-    id: item._id,
-    imageUrl: buildPictogramImageUrl(item._id),
-    searchText: trimmed,
-    keywords: item.keywords?.map((keyword) => keyword.keyword) ?? [],
-    description: item.desc,
-  }));
+  return data.pictograms as PictogramResult[];
 }
+
 
 export function buildPictogramImageUrl(
   pictogramId: number,

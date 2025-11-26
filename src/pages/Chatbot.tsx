@@ -32,6 +32,9 @@ const STORAGE_KEY = "lexipic_chat_history";
 
 const MAX_PICTOGRAMS = 6;
 
+const SESSION_KEY = "lexipic_session_id";
+
+
 const buildSearchQueries = (matches: InferenceResult[]): string[] => {
   const querySet = new Set<string>();
 
@@ -59,6 +62,20 @@ const Chatbot = () => {
     language?: string;
   };
 
+  const [sessionId] = useState(() => {
+  if (typeof window === "undefined") return null;
+
+  const stored = window.localStorage.getItem(SESSION_KEY);
+  if (stored) return stored;
+
+  const newId =
+    globalThis.crypto?.randomUUID?.() ??
+    `sess-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  window.localStorage.setItem(SESSION_KEY, newId);
+  return newId;
+  });
+
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [language, setLanguage] = useState("es");
@@ -73,6 +90,33 @@ const Chatbot = () => {
     globalThis.crypto?.randomUUID?.() ?? `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   useEffect(() => () => controllerRef.current?.abort(), []);
+
+  const persistMessage = async (payload: {
+  role: "user" | "assistant";
+  text: string;
+  pictograms?: PictogramResult[];
+  language: string;
+  }) => {
+    if (!sessionId) return;
+
+    try {
+      await fetch(`${API_URL}/api/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: payload.role,
+          text: payload.text,
+          pictograms: payload.pictograms ?? [],
+          language: payload.language,
+          sessionId,
+        }),
+      });
+    } catch (error) {
+      console.error("No se pudo guardar el mensaje en backend:", error);
+      // no mostramos toast para no molestar al usuario por un problema de logging
+    }
+  };
+
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -173,6 +217,13 @@ const Chatbot = () => {
 
       setMessages((prev) => [...prev, userEntry]);
 
+      persistMessage({
+        role: "user",
+        text: prompt,
+        pictograms: userPictograms.length ? userPictograms : undefined,
+        language: selectedLanguage,
+      });
+
       // 2) Mantener tu flujo actual de inferencia + ARASAAC
       const matches = inferSearchQueries(prompt, 3);
 
@@ -220,15 +271,24 @@ const Chatbot = () => {
 
       const deduped = dedupePictograms(aggregated, MAX_PICTOGRAMS);
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: createMessageId(),
-          role: "assistant",
-          pictograms: deduped,
-          language: selectedLanguage,
-        },
-      ]);
+      const assistantEntry: ConversationMessage = {
+        id: createMessageId(),
+        role: "assistant",
+        pictograms: deduped,
+        language: selectedLanguage,
+      };
+
+      setMessages((prev) => [...prev, assistantEntry]);
+
+      // Guardar mensaje del bot en la BD (solo pictogramas)
+      persistMessage({
+        role: "assistant",
+        text: "",
+        pictograms: deduped,
+        language: selectedLanguage,
+      });
+
+toast.success("¡Pictogramas generados!");
 
       toast.success("¡Pictogramas generados!");
     } catch (error) {
