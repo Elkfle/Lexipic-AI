@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-
+import { useAuth } from "../hooks/useAuth";
 import { Link } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ const navigationLinks = [
 
 const Navigation = () => {
   const [activeSection, setActiveSection] = useState<string>(navigationLinks[0].hash);
+  const { user, logout } = useAuth();
 
   const handleSmoothScroll = useCallback(
     (event: MouseEvent<HTMLAnchorElement>, hash: string) => {
@@ -98,7 +99,8 @@ const Navigation = () => {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
+        <div className="flex h-16 items-center justify-between gap-6">
+          {/* Logo */}
           <Link to="/" className="group flex items-center gap-3">
             <img
               src="/assets/logo.png"
@@ -107,37 +109,81 @@ const Navigation = () => {
             />
           </Link>
 
-          <div className="flex items-center gap-6">
-            {navigationLinks.map((link) => {
-              const isActive = activeSection === link.hash;
-              return (
-                <a
-                  key={link.hash}
-                  href={link.hash}
-                  onClick={(event) => handleSmoothScroll(event, link.hash)}
-                  className={cn(
-                    "relative text-sm font-medium transition-colors",
-                    isActive ? "text-primary" : "text-muted-foreground hover:text-primary",
-                  )}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  {link.label}
-                  <span
+          {/* Navegación + Auth */}
+          <div className="flex items-center gap-6 ml-auto">
+            {/* Enlaces de secciones + botón Chatbot */}
+            <div className="flex items-center gap-6">
+              {navigationLinks.map((link) => {
+                const isActive = activeSection === link.hash;
+                return (
+                  <a
+                    key={link.hash}
+                    href={link.hash}
+                    onClick={(event) => handleSmoothScroll(event, link.hash)}
                     className={cn(
-                      "pointer-events-none absolute left-0 right-0 -bottom-1 h-0.5 origin-left rounded-full bg-primary transition-transform duration-300",
-                      isActive ? "scale-x-100" : "scale-x-0",
+                      "relative text-sm font-medium transition-colors",
+                      isActive ? "text-primary" : "text-muted-foreground hover:text-primary",
                     )}
-                    aria-hidden="true"
-                  />
-                </a>
-              );
-            })}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    {link.label}
+                    <span
+                      className={cn(
+                        "pointer-events-none absolute left-0 right-0 -bottom-1 h-0.5 origin-left rounded-full bg-primary transition-transform duration-300",
+                        isActive ? "scale-x-100" : "scale-x-0",
+                      )}
+                      aria-hidden="true"
+                    />
+                  </a>
+                );
+              })}
 
-            <Link to="/chatbot" className="flex-shrink-0">
-              <ShimmerButton className="px-6 py-2 text-sm">
-                Probar Chatbot
-              </ShimmerButton>
-            </Link>
+              <Link to="/chatbot" className="flex-shrink-0">
+                <ShimmerButton className="px-6 py-2 text-sm">
+                  Probar Chatbot
+                </ShimmerButton>
+              </Link>
+
+              <Link to="/comunidad" className="text-xs sm:text-sm text-primary hover:underline">
+              Chat con personas
+              </Link>
+
+            </div>
+
+            {/* Zona de autenticación */}
+            <div className="flex items-center gap-3 border-l border-border pl-4">
+              {user ? (
+                <>
+                  <span className="text-xs sm:text-sm text-muted-foreground">
+                    Hola,{" "}
+                    <span className="font-semibold text-foreground">
+                      {user.name}
+                    </span>
+                  </span>
+                  <button
+                    onClick={logout}
+                    className="text-xs sm:text-sm text-primary hover:underline"
+                  >
+                    Cerrar sesión
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    className="text-xs sm:text-sm text-muted-foreground hover:text-primary"
+                  >
+                    Iniciar sesión
+                  </Link>
+                  <Link
+                    to="/register"
+                    className="text-xs sm:text-sm text-primary font-medium hover:underline"
+                  >
+                    Crear cuenta
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
