@@ -18,22 +18,19 @@ import {
 } from "@/components/ui/select";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
-import { Send, Sparkles, ArrowLeft } from "lucide-react";
+import { Send, Sparkles, ArrowLeft, LayoutGrid } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { inferSearchQueries, InferenceResult } from "@/lib/pictogramModel";
 import { dedupePictograms, fetchBestPictograms, PictogramResult } from "@/lib/pictogramService";
 import { cn } from "@/lib/utils";
+import { CategoryPanel } from "@/components/CategoryPanel";
 
 import { API_URL } from "../config";
 
-
 const STORAGE_KEY = "lexipic_chat_history";
-
 const MAX_PICTOGRAMS = 6;
-
 const SESSION_KEY = "lexipic_session_id";
-
 
 const buildSearchQueries = (matches: InferenceResult[]): string[] => {
   const querySet = new Set<string>();
@@ -63,17 +60,17 @@ const Chatbot = () => {
   };
 
   const [sessionId] = useState(() => {
-  if (typeof window === "undefined") return null;
+    if (typeof window === "undefined") return null;
 
-  const stored = window.localStorage.getItem(SESSION_KEY);
-  if (stored) return stored;
+    const stored = window.localStorage.getItem(SESSION_KEY);
+    if (stored) return stored;
 
-  const newId =
-    globalThis.crypto?.randomUUID?.() ??
-    `sess-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const newId =
+      globalThis.crypto?.randomUUID?.() ??
+      `sess-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  window.localStorage.setItem(SESSION_KEY, newId);
-  return newId;
+    window.localStorage.setItem(SESSION_KEY, newId);
+    return newId;
   });
 
   const [message, setMessage] = useState("");
@@ -83,6 +80,8 @@ const Chatbot = () => {
   const [lastInference, setLastInference] = useState<InferenceResult[]>([]);
   const [lastQueries, setLastQueries] = useState<string[]>([]);
   const [isBotTyping, setIsBotTyping] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+  
   const controllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -92,10 +91,10 @@ const Chatbot = () => {
   useEffect(() => () => controllerRef.current?.abort(), []);
 
   const persistMessage = async (payload: {
-  role: "user" | "assistant";
-  text: string;
-  pictograms?: PictogramResult[];
-  language: string;
+    role: "user" | "assistant";
+    text: string;
+    pictograms?: PictogramResult[];
+    language: string;
   }) => {
     if (!sessionId) return;
 
@@ -113,10 +112,8 @@ const Chatbot = () => {
       });
     } catch (error) {
       console.error("No se pudo guardar el mensaje en backend:", error);
-      // no mostramos toast para no molestar al usuario por un problema de logging
     }
   };
-
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,15 +154,19 @@ const Chatbot = () => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!message.trim()) {
+  const handleSend = async (textOverride?: string) => {
+    const inputContent = typeof textOverride === 'string' ? textOverride : message;
+
+    if (!inputContent.trim()) {
       toast.error("Por favor escribe un mensaje");
       return;
     }
 
-    const prompt = message.trim();
+    const prompt = inputContent.trim();
     const selectedLanguage = language;
+    
     setMessage("");
+    setShowCategories(false);
 
     setIsLoading(true);
     setIsBotTyping(true);
@@ -174,27 +175,23 @@ const Chatbot = () => {
     controllerRef.current = controller;
 
     try {
-      // 1) Pictogramas directos para el mensaje del usuario
       let userPictograms: PictogramResult[] = [];
 
       try {
-        // Intentar frase completa (casi siempre 404 en ARASAAC)
         userPictograms = await fetchBestPictograms(selectedLanguage, prompt, controller.signal);
 
-        // Si no hay resultados → fallback por palabras individuales
         if (!userPictograms.length) {
           const tokens = prompt.split(/\s+/).filter(Boolean);
 
           for (const token of tokens) {
             const result = await fetchBestPictograms(selectedLanguage, token, controller.signal);
             if (result.length) {
-              userPictograms = [result[0]]; // solo un pictograma
+              userPictograms = [result[0]];
               break;
             }
           }
         }
 
-        // GARANTIZAMOS solo uno
         if (userPictograms.length > 1) {
           userPictograms = [userPictograms[0]];
         }
@@ -224,7 +221,6 @@ const Chatbot = () => {
         language: selectedLanguage,
       });
 
-      // 2) Mantener tu flujo actual de inferencia + ARASAAC
       const matches = inferSearchQueries(prompt, 3);
 
       if (!matches.length) {
@@ -280,15 +276,12 @@ const Chatbot = () => {
 
       setMessages((prev) => [...prev, assistantEntry]);
 
-      // Guardar mensaje del bot en la BD (solo pictogramas)
       persistMessage({
         role: "assistant",
         text: "",
         pictograms: deduped,
         language: selectedLanguage,
       });
-
-toast.success("¡Pictogramas generados!");
 
       toast.success("¡Pictogramas generados!");
     } catch (error) {
@@ -304,6 +297,7 @@ toast.success("¡Pictogramas generados!");
       setIsBotTyping(false);
     }
   };
+
   const languageOptions = [
     { value: "es", label: "Español" },
     { value: "en", label: "Inglés" },
@@ -389,16 +383,22 @@ toast.success("¡Pictogramas generados!");
       
       <div className="flex-1 pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="container mx-auto max-w-4xl">
-          <Link to="/" className="inline-flex items-center text-muted-foreground hover:text-primary mb-6 transition-colors">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver al inicio
-          </Link>
+          <div className="flex items-center justify-between mb-6">
+            <Link to="/" className="inline-flex items-center text-muted-foreground hover:text-primary transition-colors">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Volver al inicio
+            </Link>
+            
+            {/* (Botón del Header ELIMINADO de aquí) */}
+          </div>
+
           <div className="text-center mb-8">
             <h1 className="text-3xl md:text-4xl font-bold mb-4">Chatbot de Pictogramas</h1>
             <p className="text-muted-foreground">
               Conversa con Lexi para obtener pictogramas guiados por PLN y la API oficial de ARASAAC.
             </p>
           </div>
+          
           <Card className="mb-8">
             <CardContent className="pt-6 flex flex-col h-[82vh]">
               <div className="flex flex-col gap-4">
@@ -446,9 +446,29 @@ toast.success("¡Pictogramas generados!");
               </div>
 
               <div className="mt-6 space-y-3">
+                {/* Panel de Categorías (Aparece arriba del input) */}
+                {showCategories && (
+                  <div className="mb-3 animate-fade-in">
+                    <CategoryPanel onSelectPhrase={handleSend} />
+                  </div>
+                )}
+
                 <div className="flex items-end gap-3 rounded-full border bg-muted/30 px-5 py-4 shadow-inner">
+                  
+                  {/* --- AQUI ESTÁ EL CAMBIO: Botón de Categorías integrado --- */}
+                  <Button
+                    variant={showCategories ? "secondary" : "ghost"}
+                    size="icon"
+                    onClick={() => setShowCategories(!showCategories)}
+                    className="h-10 w-10 rounded-full shrink-0 text-muted-foreground hover:text-primary"
+                    title="Abrir panel de pictogramas"
+                  >
+                    <LayoutGrid className="h-5 w-5" />
+                  </Button>
+                  {/* ------------------------------------------------------ */}
+
                   <Textarea
-                    placeholder="Escribe tu mensaje como si chatearas con Lexi..."
+                    placeholder="Escribe tu mensaje..."
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(event) => {
@@ -461,10 +481,10 @@ toast.success("¡Pictogramas generados!");
                     disabled={isLoading}
                   />
                   <Button
-                    onClick={handleSend}
+                    onClick={() => handleSend()}
                     disabled={isLoading}
                     size="icon"
-                    className="rounded-full h-12 w-12 shadow-md"
+                    className="rounded-full h-12 w-12 shadow-md shrink-0"
                   >
                     {isLoading ? (
                       <Sparkles className="h-5 w-5 animate-spin" />
